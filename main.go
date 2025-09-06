@@ -162,5 +162,28 @@ func main() {
 	// Display selected period
 	billing.DisplaySelectedPeriod(selectedPeriod)
 
-	// Calcu
+	utils.PrintAction("Fetching consumption data...")
+	consumptionData, err := eloverblik.GetConsumptionForPeriod(
+		refreshToken,
+		selectedMeterPoint.ID,
+		selectedPeriod.Start,
+		selectedPeriod.End,
+	)
+	if err != nil {
+		log.Fatal("Failed to get consumption data:", err)
+	}
+
+	utils.PrintSuccess(fmt.Sprintf("Successfully processed %d hours of consumption data", len(consumptionData)))
+
+	// Vis summary af consumption data
+	summary := eloverblik.FormatConsumptionSummary(consumptionData)
+	utils.PrintInfo(summary)
+
+	// Nu har du alle hourly consumption data til at beregne regningen
+	totalConsumption := eloverblik.GetTotalConsumption(consumptionData)
+	utils.PrintInfo(fmt.Sprintf("Total consumption for period: %.2f kWh", totalConsumption))
+
+	// Eksempel: Vis consumption fordelt på timer af dagen
+	hourlyBreakdown := eloverblik.GetConsumptionByHour(consumptionData)
+	utils.PrintInfo(fmt.Sprintf("Data spread across %d different hours of day", len(hourlyBreakdown)))
 }
