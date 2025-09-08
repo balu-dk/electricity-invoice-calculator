@@ -116,11 +116,12 @@ func GenerateAvailablePeriods(consumerStartDate time.Time, frequency BillingFreq
 	var periods []Period
 	var current time.Time
 
-	if frequency == Monthly {
+	switch frequency {
+	case Monthly:
 		current = GetFirstCompleteMonth(consumerStartDate)
-	} else if frequency == Quarterly {
+	case Quarterly:
 		current = GetFirstCompleteQuarter(consumerStartDate)
-	} else {
+	default:
 		return nil, fmt.Errorf("error in reading frequency: %s", frequency)
 	}
 
