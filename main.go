@@ -175,15 +175,130 @@ func main() {
 
 	utils.PrintSuccess(fmt.Sprintf("Successfully processed %d hours of consumption data", len(consumptionData)))
 
-	// Vis summary af consumption data
 	summary := eloverblik.FormatConsumptionSummary(consumptionData)
 	utils.PrintInfo(summary)
 
-	// Nu har du alle hourly consumption data til at beregne regningen
 	totalConsumption := eloverblik.GetTotalConsumption(consumptionData)
 	utils.PrintInfo(fmt.Sprintf("Total consumption for period: %.2f kWh", totalConsumption))
 
-	// Eksempel: Vis consumption fordelt på timer af dagen
 	hourlyBreakdown := eloverblik.GetConsumptionByHour(consumptionData)
 	utils.PrintInfo(fmt.Sprintf("Data spread across %d different hours of day", len(hourlyBreakdown)))
+
+	utils.PrintAction("Fetching charges (tariffs and subscriptions)...")
+	chargesData, err := eloverblik.GetCharges(refreshToken, selectedMeterPoint.ID)
+	if err != nil {
+		log.Fatal("Failed to get charges data:", err)
+	}
+
+	utils.PrintSuccess("Successfully retrieved charges data")
+
+	utils.PrintAction("Calculating complete electricity bill with spot prices...")
+
+	// Load grid companies mapping
+	gridMapping, err := billing.LoadGridCompaniesMapping("lib/billing/grid_companies.json")
+	if err != nil {
+		log.Fatal("Failed to load grid companies mapping:", err)
+	}
+
+	// Find price area for your grid operator
+	priceArea, err := billing.FindPriceArea(gridOperator.Name, gridMapping)
+	if err != nil {
+		log.Fatal("Failed to find price area:", err)
+	}
+
+	utils.PrintInfo(fmt.Sprintf("Grid operator: %s, Price area: %s", gridOperator.Name, priceArea))
+
+	// Fetch spot prices for the period
+	spotPrices, err := billing.FetchSpotPricesForPeriod(selectedPeriod.Start, selectedPeriod.End, priceArea)
+	if err != nil {
+		log.Fatal("Failed to fetch spot prices:", err)
+	}
+
+	utils.PrintInfo(fmt.Sprintf("Fetched %d spot price records", len(spotPrices)))
+
+	// Calculate all hourly costs with spot prices
+	supplierPrice := 0.02 // 2 øre per kWh - you can make this interactive later
+	hourlyTariffCosts := billing.CalculateAllHourlyTariffs(consumptionData, chargesData, supplierPrice, spotPrices)
+
+	// Get summaries
+	tariffSummary := billing.SummarizeTariffCosts(hourlyTariffCosts)
+	totalTariffCosts := billing.GetTotalTariffCosts(hourlyTariffCosts)
+	totalSupplierCosts := billing.GetTotalSupplierCosts(hourlyTariffCosts)
+	totalSpotCosts := billing.GetTotalSpotCosts(hourlyTariffCosts)
+
+	// Calculate subscription costs
+	var totalSubscriptionCost float64
+	subscriptionBreakdown := make(map[string]float64)
+
+	var monthsInPeriod float64
+	if frequency == billing.Monthly {
+		monthsInPeriod = 1.0
+	} else { // Quarterly
+		monthsInPeriod = 3.0
+	}
+
+	for _, subscription := range chargesData.Subscriptions {
+		monthlyCost := subscription.Price * float64(subscription.Quantity)
+		periodCost := monthlyCost * monthsInPeriod
+		subscriptionBreakdown[subscription.Name] = periodCost
+		totalSubscriptionCost += periodCost
+	}
+
+	// Calculate total bill
+	totalBill := totalTariffCosts + totalSubscriptionCost
+
+	// Display results
+	utils.ClearConsole()
+	utils.PrintSuccess(fmt.Sprintf("=== COMPLETE ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
+	fmt.Println()
+
+	// Consumption summary
+	copenhagen, _ := time.LoadLocation("Europe/Copenhagen")
+	utils.PrintInfo("CONSUMPTION SUMMARY:")
+	utils.PrintInfo(fmt.Sprintf("Period: %s to %s",
+		selectedPeriod.Start.In(copenhagen).Format("2006-01-02"),
+		selectedPeriod.End.AddDate(0, 0, -1).In(copenhagen).Format("2006-01-02")))
+	utils.PrintInfo(fmt.Sprintf("Total consumption: %.2f kWh", totalConsumption))
+	fmt.Println()
+
+	// Usage-based charges
+	utils.PrintInfo("USAGE-BASED CHARGES:")
+	for name, cost := range tariffSummary {
+		utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", name, cost))
+	}
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Elleverandør", totalSupplierCosts))
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Spotpris", totalSpotCosts))
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Total usage charges", totalTariffCosts))
+	fmt.Println()
+
+	// Fixed charges
+	utils.PrintInfo("FIXED MONTHLY CHARGES:")
+	for name, cost := range subscriptionBreakdown {
+		utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", name, cost))
+	}
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Total subscriptions", totalSubscriptionCost))
+	fmt.Println()
+
+	// Total bill
+	utils.PrintSuccess(fmt.Sprintf("TOTAL ELECTRICITY BILL: %.2f DKK", totalBill))
+	utils.PrintInfo(fmt.Sprintf("Average cost per kWh: %.3f DKK", totalBill/totalConsumption))
+
+	// Calculate VAT (25% in Denmark)
+	const VAT_RATE = 0.25
+	totalVAT := totalBill * VAT_RATE
+	totalBillWithVAT := totalBill + totalVAT
+
+	// Display results
+	utils.ClearConsole()
+	utils.PrintSuccess(fmt.Sprintf("=== COMPLETE ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
+	fmt.Println()
+
+	// Total bill
+	utils.PrintInfo("BILL SUMMARY:")
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Subtotal (excluding VAT)", totalBill))
+	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "VAT (25%)", totalVAT))
+	utils.PrintSuccess(fmt.Sprintf("%-30s: %8.2f DKK", "TOTAL INCLUDING VAT", totalBillWithVAT))
+	fmt.Println()
+
+	utils.PrintInfo(fmt.Sprintf("Average cost per kWh (incl. VAT): %.3f DKK", totalBillWithVAT/totalConsumption))
 }

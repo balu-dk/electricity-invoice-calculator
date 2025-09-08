@@ -1,0 +1,209 @@
+{
+  "gridCompanies": [
+    {
+      "def": "533",
+      "name": "Flow Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "790",
+      "name": "Radius Elnet A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "740",
+      "name": "Cerius A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "246",
+      "name": "MES Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "347",
+      "name": "NOE Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "532",
+      "name": "VEKSEL A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "553",
+      "name": "Vores Elnet",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "232",
+      "name": "Dinel A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "151",
+      "name": "KONSTANT Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "032",
+      "name": "Nord Energi Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "344",
+      "name": "Elnetselskabet N1",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "244",
+      "name": "TREFOR El-net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "860",
+      "name": "Zeanet A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "331",
+      "name": "Netselskabet Elværk",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "342",
+      "name": "Ikast El Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "854",
+      "name": "NKE-Elnet A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "152",
+      "name": "N1 A/S (152)",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "351",
+      "name": "L-NET",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "357",
+      "name": "Forsyning Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "531",
+      "name": "Ravdex",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "348",
+      "name": "RAH Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "051",
+      "name": "Elinord A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "154",
+      "name": "Elnet Midt A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "911",
+      "name": "TREFOR El-net A/S (Øst)",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "584",
+      "name": "Midtfyns Elforsyning A.m.b.a",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "141",
+      "name": "Hammel El-forsyning Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "853",
+      "name": "Cerius A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "755",
+      "name": "Radius Elnet A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "757",
+      "name": "Elektrus A/S",
+      "priceArea": "DK2"
+    },
+    {
+      "def": "142",
+      "name": "Kjellerup El-Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "341",
+      "name": "Grindsted Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "370",
+      "name": "Aal El Net a.m.b.a.",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "016",
+      "name": "EL-NET Kongerslev A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "384",
+      "name": "Tarm Elværk Net A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "385",
+      "name": "Videbæk Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "131",
+      "name": "N1 A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "396",
+      "name": "Sunds Net A.m.b.A",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "381",
+      "name": "Hurup Elværk Net",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "085",
+      "name": "Læsø Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "084",
+      "name": "Kimbrer Elnet A/S",
+      "priceArea": "DK1"
+    },
+    {
+      "def": "371",
+      "name": "Hjerting Transformatorforening",
+      "priceArea": "DK1"
+    }
+  ]
+}

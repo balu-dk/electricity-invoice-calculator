@@ -210,8 +210,9 @@ func FormatConsumptionSummary(hourlyConsumptions []HourlyConsumption) string {
 	totalHours := len(hourlyConsumptions)
 	avgHourly := totalConsumption / float64(totalHours)
 
-	startDate := hourlyConsumptions[0].DateTime.Format("2006-01-02")
-	endDate := hourlyConsumptions[len(hourlyConsumptions)-1].DateTime.Format("2006-01-02")
+	copenhagen, _ := time.LoadLocation("Europe/Copenhagen")
+	startDate := hourlyConsumptions[0].DateTime.In(copenhagen).Format("2006-01-02")
+	endDate := hourlyConsumptions[len(hourlyConsumptions)-1].DateTime.In(copenhagen).Format("2006-01-02")
 
 	return fmt.Sprintf(
 		"Consumption Summary:\n"+
