@@ -21,9 +21,10 @@ type MeterPoint struct {
 	ConsumerStartDate string `json:"consumerStartDate"`
 }
 
-type MeterPointGridOperator struct {
+type MeterPointDetails struct {
 	Name                   string `json:"gridOperatorName"`
 	ID                     string `json:"gridOperatorID"`
+	EstimatedAnnualVolume  string `json:"estimatedAnnualVolume"`
 	GridAreaIdentification string `json:"meteringGridAreaIdentification"`
 }
 
@@ -33,7 +34,7 @@ type APIResponse struct {
 
 type DetailedAPIResponse struct {
 	Result []struct {
-		Result MeterPointGridOperator `json:"result"`
+		Result MeterPointDetails `json:"result"`
 	} `json:"result"`
 }
 
@@ -60,8 +61,8 @@ func GetMeterPoints(refreshToken string) ([]MeterPoint, error) {
 }
 
 // Requests for Meter Point (extra) details
-// and returns Grid Operator details as MeterPointGridOperator
-func GetMeterPointGridOperator(refreshToken, meterPointId string) (MeterPointGridOperator, error) {
+// and returns Grid Operator details as MeterPointDetails
+func GetMeterPointDetails(refreshToken, meterPointId string) (MeterPointDetails, error) {
 	url := APIEndpoint + "meteringpoints/meteringpoint/getdetails"
 
 	body := []byte(fmt.Sprintf(`{
@@ -71,22 +72,22 @@ func GetMeterPointGridOperator(refreshToken, meterPointId string) (MeterPointGri
 	}`, meterPointId))
 	response, err := utils.MakeRequestWithToken("POST", url, refreshToken, body)
 	if err != nil {
-		return MeterPointGridOperator{}, fmt.Errorf("failed to get meter point grid operator: %v", err)
+		return MeterPointDetails{}, fmt.Errorf("failed to get meter point grid operator: %v", err)
 	}
 
 	if err = utils.ValidateStatusOK(response); err != nil {
-		return MeterPointGridOperator{}, err
+		return MeterPointDetails{}, err
 	}
 
 	var apiResponse DetailedAPIResponse
 	err = json.Unmarshal(response.Body, &apiResponse)
 	if err != nil {
-		return MeterPointGridOperator{}, fmt.Errorf("failed to parse meter point grid operator JSON: %v", err)
+		return MeterPointDetails{}, fmt.Errorf("failed to parse meter point grid operator JSON: %v", err)
 	}
 
 	// Check if we have any results
 	if len(apiResponse.Result) == 0 {
-		return MeterPointGridOperator{}, fmt.Errorf("no meter point details found")
+		return MeterPointDetails{}, fmt.Errorf("no meter point details found")
 	}
 
 	return apiResponse.Result[0].Result, nil

@@ -79,9 +79,9 @@ func selectMeterPoint(refreshToken string) eloverblik.MeterPoint {
 }
 
 // getGridOperatorInfo fetches grid operator details for the selected meter point
-func getGridOperatorInfo(refreshToken string, meterPoint eloverblik.MeterPoint) eloverblik.MeterPointGridOperator {
+func getGridOperatorInfo(refreshToken string, meterPoint eloverblik.MeterPoint) eloverblik.MeterPointDetails {
 	utils.PrintAction("Getting detailed information...")
-	gridOperator, err := eloverblik.GetMeterPointGridOperator(refreshToken, meterPoint.ID)
+	gridOperator, err := eloverblik.GetMeterPointDetails(refreshToken, meterPoint.ID)
 	if err != nil {
 		log.Fatal("Failed to get grid operator details:", err)
 	}
@@ -90,7 +90,7 @@ func getGridOperatorInfo(refreshToken string, meterPoint eloverblik.MeterPoint) 
 }
 
 // displayMeterPointDetails shows the selected meter point and grid operator details
-func displayMeterPointDetails(meterPoint eloverblik.MeterPoint, gridOperator eloverblik.MeterPointGridOperator) {
+func displayMeterPointDetails(meterPoint eloverblik.MeterPoint, gridOperator eloverblik.MeterPointDetails) {
 	utils.ClearConsole()
 
 	utils.PrintInfo("Meter Point Details:")
@@ -101,6 +101,7 @@ func displayMeterPointDetails(meterPoint eloverblik.MeterPoint, gridOperator elo
 		meterPoint.PostCode,
 		meterPoint.City)
 	fmt.Printf("Grid Operator: %s\n", gridOperator.Name)
+	fmt.Printf("Estimated Annual Volume: %s kWh\n", gridOperator.EstimatedAnnualVolume)
 }
 
 // getBillingFrequency asks user for their billing frequency
