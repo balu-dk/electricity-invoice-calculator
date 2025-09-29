@@ -15,11 +15,19 @@ const (
 	Quarterly BillingFrequency = "quarterly"
 )
 
+type CalculationType string
+
+const (
+	Historical CalculationType = "historical"
+	Aconto     CalculationType = "aconto"
+)
+
 type Period struct {
-	Start     time.Time
-	End       time.Time
-	Label     string
-	Frequency BillingFrequency
+	Start           time.Time
+	End             time.Time
+	Label           string
+	Frequency       BillingFrequency
+	CalculationType CalculationType
 }
 
 // Asks user to choose billing frequency
@@ -31,6 +39,21 @@ func GetBillingFrequency() BillingFrequency {
 		return Monthly
 	}
 	return Quarterly
+}
+
+// Asks user to choose calculation type
+func GetCalculationType() CalculationType {
+	options := []string{
+		"Historical calculation (based on actual consumption)",
+		"Aconto calcuation (estimate for upcoming period)",
+	}
+	choice := utils.GetSimpleChoice("What type of calculation?", options)
+
+	if choice == 0 {
+		return Historical
+	}
+
+	return Aconto
 }
 
 // Returns the first complete quarter after startDate in Copenhagen timezone
@@ -111,53 +134,144 @@ func GetLastCompletePeriod(frequency BillingFrequency) (time.Time, error) {
 
 }
 
-// Creates list of available periods
-func GenerateAvailablePeriods(consumerStartDate time.Time, frequency BillingFrequency) ([]Period, error) {
-	var periods []Period
-	var current time.Time
+// Returns next periods for aconto calculation
+func GetNextAcontoPeriods(frequency BillingFrequency, numberOfPeriods int) ([]time.Time, error) {
+	copenhagen, _ := time.LoadLocation("Europe/Copenhagen")
+	now := time.Now().In(copenhagen)
+
+	var startPeriods []time.Time
 
 	switch frequency {
 	case Monthly:
-		current = GetFirstCompleteMonth(consumerStartDate)
-	case Quarterly:
-		current = GetFirstCompleteQuarter(consumerStartDate)
-	default:
-		return nil, fmt.Errorf("error in reading frequency: %s", frequency)
-	}
+		// Start with the current month if we're path the 15, otherwise start with next month
+		year, month, _ := now.Date()
 
-	lastPeriod, err := GetLastCompletePeriod(frequency)
-	if err != nil {
-		log.Fatal("Error getting last period:", err)
-	}
+		var startMonth time.Month
+		var startYear int
 
-	for !current.After(lastPeriod) {
-		var end time.Time
-		var label string
+		startMonth = month
+		startYear = year
 
-		if frequency == Monthly {
-			// End date should be first day of next month (exclusive)
-			// This means: November billing = 01-11-YYYY 00:00 to 01-12-YYYY 00:00
-			end = current.AddDate(0, 1, 0)
-			label = current.Format("January 2006")
-		} else {
-			// End date should be first day of next quarter (exclusive)
-			// This means: Q4 billing = 01-10-YYYY 00:00 to 01-01-YYYY+1 00:00
-			end = current.AddDate(0, 3, 0)
-			quarter := ((int(current.Month()) - 1) / 3) + 1
-			label = fmt.Sprintf("Q%d %d", quarter, current.Year())
+		for i := 0; i < numberOfPeriods; i++ {
+			periodStart := time.Date(startYear, startMonth, 1, 0, 0, 0, 0, copenhagen)
+			startPeriods = append(startPeriods, periodStart)
+
+			startMonth++
+			if startMonth > 12 {
+				startMonth = 1
+				startYear++
+			}
 		}
 
-		periods = append(periods, Period{
-			Start:     current,
-			End:       end,
-			Label:     label,
-			Frequency: frequency,
-		})
+	case Quarterly:
+		year := now.Year()
+		currentMonth := now.Month()
 
-		if frequency == Monthly {
-			current = current.AddDate(0, 1, 0)
+		var nextQuarter time.Month
+		if currentMonth < 3 {
+			nextQuarter = 4 // Q2
+		} else if currentMonth < 6 {
+			nextQuarter = 7 // Q3
+		} else if currentMonth < 9 {
+			nextQuarter = 10 // Q4
 		} else {
-			current = current.AddDate(0, 3, 0)
+			nextQuarter = 1 // Q1 next year
+			year++
+		}
+
+		for i := 0; i < numberOfPeriods; i++ {
+			periodStart := time.Date(year, nextQuarter, 1, 0, 0, 0, 0, copenhagen)
+			startPeriods = append(startPeriods, periodStart)
+
+			nextQuarter += 3
+			if nextQuarter > 12 {
+				nextQuarter = 1
+				year++
+			}
+		}
+
+	default:
+		return nil, fmt.Errorf("invalid billing frequency: %s", frequency)
+	}
+
+	return startPeriods, nil
+}
+
+// Creates list of available periods
+func GenerateAvailablePeriods(consumerStartDate time.Time, frequency BillingFrequency, calculationType CalculationType) ([]Period, error) {
+	var periods []Period
+	var current time.Time
+
+	if calculationType == Historical {
+		switch frequency {
+		case Monthly:
+			current = GetFirstCompleteMonth(consumerStartDate)
+		case Quarterly:
+			current = GetFirstCompleteQuarter(consumerStartDate)
+		default:
+			return nil, fmt.Errorf("error in reading frequency: %s", frequency)
+		}
+
+		lastPeriod, err := GetLastCompletePeriod(frequency)
+		if err != nil {
+			log.Fatal("Error getting last period:", err)
+		}
+
+		for !current.After(lastPeriod) {
+			var end time.Time
+			var label string
+
+			if frequency == Monthly {
+				end = current.AddDate(0, 1, 0)
+				label = current.Format("January 2006")
+			} else if frequency == Quarterly {
+				end = current.AddDate(0, 3, 0)
+				quarter := ((int(current.Month()) - 1) / 3) + 1
+				label = fmt.Sprintf("Q%d %d", quarter, current.Year())
+			}
+
+			periods = append(periods, Period{
+				Start:           current,
+				End:             end,
+				Label:           label,
+				Frequency:       frequency,
+				CalculationType: Historical,
+			})
+
+			if frequency == Monthly {
+				current = current.AddDate(0, 1, 0)
+			} else if frequency == Quarterly {
+				current = current.AddDate(0, 3, 0)
+			}
+		}
+	} else {
+		numberOfPeriods := 6
+
+		startPeriods, err := GetNextAcontoPeriods(frequency, numberOfPeriods)
+		if err != nil {
+			return nil, fmt.Errorf("error generating aconto periods: %w", err)
+		}
+
+		for _, start := range startPeriods {
+			var end time.Time
+			var label string
+
+			if frequency == Monthly {
+				end = start.AddDate(0, 1, 0)
+				label = fmt.Sprintf("%s (Aconto)", start.Format("January 2006"))
+			} else if frequency == Quarterly {
+				end = start.AddDate(0, 3, 0)
+				quarter := ((int(start.Month()) - 1) / 3) + 1
+				label = fmt.Sprintf("Q%d %d (Aconto)", quarter, start.Year())
+			}
+
+			periods = append(periods, Period{
+				Start:           start,
+				End:             end,
+				Label:           label,
+				Frequency:       frequency,
+				CalculationType: Aconto,
+			})
 		}
 	}
 
@@ -178,6 +292,7 @@ func SelectPeriod(periods []Period) Period {
 // Shows the selected period details
 func DisplaySelectedPeriod(period Period) {
 	utils.PrintSuccess(fmt.Sprintf("Selected period: %s", period.Label))
+	utils.PrintInfo(fmt.Sprintf("Calculation type: %s", period.CalculationType))
 	utils.PrintInfo(fmt.Sprintf("From: %s (inclusive)", period.Start.Format("2006-01-02 15:04:05 MST")))
 	utils.PrintInfo(fmt.Sprintf("To: %s (exclusive)", period.End.Format("2006-01-02 15:04:05 MST")))
 	utils.PrintInfo(fmt.Sprintf("Time zone: %s", period.Start.Location()))

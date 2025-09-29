@@ -24,7 +24,7 @@ type MeterPoint struct {
 type MeterPointDetails struct {
 	Name                   string `json:"gridOperatorName"`
 	ID                     string `json:"gridOperatorID"`
-	EstimatedAnnualVolume  string `json:"estimatedAnnualVolume"`
+	EstimatedAnnualVolume  int    `json:"estimatedAnnualVolume,string"`
 	GridAreaIdentification string `json:"meteringGridAreaIdentification"`
 }
 

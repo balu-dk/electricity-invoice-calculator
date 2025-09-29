@@ -3,6 +3,7 @@ package main
 import (
 	"electricity-invoice-calculator/lib/billing"
 	"electricity-invoice-calculator/lib/eloverblik"
+	"electricity-invoice-calculator/lib/energinet"
 	"electricity-invoice-calculator/lib/utils"
 	"fmt"
 	"log"
@@ -101,18 +102,7 @@ func displayMeterPointDetails(meterPoint eloverblik.MeterPoint, gridOperator elo
 		meterPoint.PostCode,
 		meterPoint.City)
 	fmt.Printf("Grid Operator: %s\n", gridOperator.Name)
-	fmt.Printf("Estimated Annual Volume: %s kWh\n", gridOperator.EstimatedAnnualVolume)
-}
-
-// getBillingFrequency asks user for their billing frequency
-func getBillingFrequency() billing.BillingFrequency {
-	billingOptions := []string{"Monthly", "Quarterly"}
-	freqChoice := utils.GetSimpleChoice("How are you billed?", billingOptions)
-
-	if freqChoice == 0 {
-		return billing.Monthly
-	}
-	return billing.Quarterly
+	fmt.Printf("Estimated Annual Volume: %d kWh\n", gridOperator.EstimatedAnnualVolume)
 }
 
 func main() {
@@ -128,30 +118,37 @@ func main() {
 	// Display details
 	displayMeterPointDetails(selectedMeterPoint, gridOperator)
 
-	// Get billing frequency
-	frequency := getBillingFrequency()
-
 	utils.ClearConsole()
 
+	// Get calculation type
+	calculationType := billing.GetCalculationType()
+	utils.PrintSuccess(fmt.Sprintf("Selected calculation type: %s", calculationType))
+
+	// Get billing frequency
+	frequency := billing.GetBillingFrequency()
 	utils.PrintSuccess(fmt.Sprintf("Selected billing frequency: %s", frequency))
 
-	// Period selection
+	// Period selection with calculation type
 	utils.PrintAction("Generating available periods...")
 
-	// Parse consumer start date (you'll need to add ConsumerStartDate to your MeterPoint struct)
+	// Parse consumer start date
 	consumerStartDate, err := time.Parse("2006-01-02T15:04:05.000Z", selectedMeterPoint.ConsumerStartDate)
 	if err != nil {
 		log.Fatal("Failed to parse consumer start date:", err)
 	}
 
 	// Generate available periods
-	periods, err := billing.GenerateAvailablePeriods(consumerStartDate, frequency)
+	periods, err := billing.GenerateAvailablePeriods(consumerStartDate, frequency, calculationType)
 	if err != nil {
 		log.Fatal("Failed to generate periods:", err)
 	}
 
 	if len(periods) == 0 {
-		utils.PrintWarning("No complete periods available for calculation yet.")
+		if calculationType == billing.Historical {
+			utils.PrintWarning("No complete historical periods available for calculation yet.")
+		} else {
+			utils.PrintWarning("No aconto periods available.")
+		}
 		return
 	}
 
@@ -163,25 +160,124 @@ func main() {
 	// Display selected period
 	billing.DisplaySelectedPeriod(selectedPeriod)
 
-	utils.PrintAction("Fetching consumption data...")
-	consumptionData, err := eloverblik.GetConsumptionForPeriod(
-		refreshToken,
-		selectedMeterPoint.ID,
-		selectedPeriod.Start,
-		selectedPeriod.End,
-	)
+	// NEW: Determine actual period type based on dates
+	periodType := billing.DeterminePeriodType(selectedPeriod, calculationType)
+	utils.PrintInfo(fmt.Sprintf("Detected period type: %s", periodType))
+
+	// Load grid companies mapping
+	gridMapping, err := billing.LoadGridCompaniesMapping("lib/billing/grid_companies.json")
 	if err != nil {
-		log.Fatal("Failed to get consumption data:", err)
+		log.Fatal("Failed to load grid companies mapping:", err)
 	}
 
-	utils.PrintSuccess(fmt.Sprintf("Successfully processed %d hours of consumption data", len(consumptionData)))
+	// Find price area for grid operator
+	priceArea, err := billing.FindPriceArea(gridOperator.Name, gridMapping)
+	if err != nil {
+		log.Fatal("Failed to find price area:", err)
+	}
 
-	summary := eloverblik.FormatConsumptionSummary(consumptionData)
-	utils.PrintInfo(summary)
+	utils.PrintInfo(fmt.Sprintf("Grid operator: %s, Price area: %s", gridOperator.Name, priceArea))
 
-	totalConsumption := eloverblik.GetTotalConsumption(consumptionData)
-	utils.PrintInfo(fmt.Sprintf("Total consumption for period: %.2f kWh", totalConsumption))
+	// NEW: Branch based on detected period type
+	var consumptionData []eloverblik.HourlyConsumption
+	var totalConsumption float64
+	var spotPrices []energinet.SpotPriceRecord
 
+	switch periodType {
+	case billing.PeriodHistorical:
+		// Historical calculation
+		utils.PrintAction("Fetching actual consumption data...")
+		consumptionData, err = eloverblik.GetConsumptionForPeriod(
+			refreshToken,
+			selectedMeterPoint.ID,
+			selectedPeriod.Start,
+			selectedPeriod.End,
+		)
+		if err != nil {
+			log.Fatal("Failed to get consumption data:", err)
+		}
+
+		totalConsumption = eloverblik.GetTotalConsumption(consumptionData)
+		summary := eloverblik.FormatConsumptionSummary(consumptionData)
+		utils.PrintInfo(summary)
+
+		// Fetch real spot prices
+		utils.PrintAction("Fetching spot prices...")
+		spotPrices, err = billing.FetchSpotPricesForPeriod(selectedPeriod.Start, selectedPeriod.End, priceArea)
+		if err != nil {
+			log.Fatal("Failed to fetch spot prices:", err)
+		}
+		utils.PrintInfo(fmt.Sprintf("Fetched %d spot price records", len(spotPrices)))
+
+	case billing.PeriodAconto:
+		// Pure aconto calculation
+		utils.PrintAction("Estimating consumption for aconto calculation...")
+
+		// Ask about spot price method
+		spotPriceOptions := []string{
+			"Use fixed estimate (614.029 DKK/MWh)",
+			"Use historical prices from same period last year",
+		}
+		spotPriceChoice := utils.GetSimpleChoice("How should we estimate spot prices?", spotPriceOptions)
+		useHistoricalPrices := (spotPriceChoice == 1)
+
+		// Create aconto estimation
+		acontoEstimation, err := billing.CreateAcontoEstimation(
+			gridOperator.EstimatedAnnualVolume,
+			selectedPeriod.Start,
+			selectedPeriod.End,
+			priceArea,
+			frequency,
+			useHistoricalPrices,
+		)
+		if err != nil {
+			log.Fatal("Failed to create aconto estimation:", err)
+		}
+
+		// Display estimation summary
+		billing.DisplayAcontoEstimationSummary(acontoEstimation, selectedPeriod)
+
+		// Use estimated data
+		consumptionData = acontoEstimation.EstimatedConsumption
+		totalConsumption = acontoEstimation.TotalEstimatedkWh
+		spotPrices = acontoEstimation.EstimatedSpotPrices
+
+		utils.PrintInfo(fmt.Sprintf("Generated %d hours of estimated consumption data", len(consumptionData)))
+
+	case billing.PeriodHybrid:
+		// NEW: Hybrid calculation
+		utils.PrintAction("Performing hybrid calculation (actual + estimated data)...")
+
+		// Get fixed spot price for estimated portion
+		fixedSpotPrice := billing.GetUserFixedSpotPrice()
+
+		// Create hybrid estimation
+		hybridEstimation, err := billing.CreateHybridEstimation(
+			gridOperator.EstimatedAnnualVolume,
+			selectedPeriod,
+			frequency,
+			refreshToken,
+			selectedMeterPoint.ID,
+			priceArea,
+			fixedSpotPrice,
+		)
+		if err != nil {
+			log.Fatal("Failed to create hybrid estimation:", err)
+		}
+
+		// Display hybrid summary
+		billing.DisplayHybridEstimationSummary(hybridEstimation, selectedPeriod)
+
+		// Use combined data
+		consumptionData = hybridEstimation.CombinedConsumption
+		totalConsumption = hybridEstimation.TotalEstimatedkWh
+		spotPrices = hybridEstimation.CombinedSpotPrices
+
+		utils.PrintInfo(fmt.Sprintf("Using %d hours of combined data (%d actual + %d estimated)",
+			len(consumptionData), hybridEstimation.ActualHours, hybridEstimation.EstimatedHours))
+	}
+
+	// Continue with shared calculation logic
 	hourlyBreakdown := eloverblik.GetConsumptionByHour(consumptionData)
 	utils.PrintInfo(fmt.Sprintf("Data spread across %d different hours of day", len(hourlyBreakdown)))
 
@@ -195,30 +291,12 @@ func main() {
 
 	utils.PrintAction("Calculating complete electricity bill with spot prices...")
 
-	// Load grid companies mapping
-	gridMapping, err := billing.LoadGridCompaniesMapping("lib/billing/grid_companies.json")
-	if err != nil {
-		log.Fatal("Failed to load grid companies mapping:", err)
+	// Set supplier price based on calculation type
+	supplierPrice := 0.0 // No supplier cost for aconto/hybrid calculations
+	if periodType == billing.PeriodHistorical {
+		supplierPrice = 0.02 // 2 øre per kWh for historical calculations only
 	}
 
-	// Find price area for your grid operator
-	priceArea, err := billing.FindPriceArea(gridOperator.Name, gridMapping)
-	if err != nil {
-		log.Fatal("Failed to find price area:", err)
-	}
-
-	utils.PrintInfo(fmt.Sprintf("Grid operator: %s, Price area: %s", gridOperator.Name, priceArea))
-
-	// Fetch spot prices for the period
-	spotPrices, err := billing.FetchSpotPricesForPeriod(selectedPeriod.Start, selectedPeriod.End, priceArea)
-	if err != nil {
-		log.Fatal("Failed to fetch spot prices:", err)
-	}
-
-	utils.PrintInfo(fmt.Sprintf("Fetched %d spot price records", len(spotPrices)))
-
-	// Calculate all hourly costs with spot prices
-	supplierPrice := 0.02 // 2 øre per kWh - you can make this interactive later
 	hourlyTariffCosts := billing.CalculateAllHourlyTariffs(consumptionData, chargesData, supplierPrice, spotPrices)
 
 	// Get summaries
@@ -248,9 +326,21 @@ func main() {
 	// Calculate total bill
 	totalBill := totalTariffCosts + totalSubscriptionCost
 
-	// Display results
+	// Calculate VAT (25% in Denmark)
+	const VAT_RATE = 0.25
+	totalVAT := totalBill * VAT_RATE
+	totalBillWithVAT := totalBill + totalVAT
+
+	// Display results with appropriate title based on period type
 	utils.ClearConsole()
-	utils.PrintSuccess(fmt.Sprintf("=== COMPLETE ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
+	switch periodType {
+	case billing.PeriodHistorical:
+		utils.PrintSuccess(fmt.Sprintf("=== HISTORICAL ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
+	case billing.PeriodAconto:
+		utils.PrintSuccess(fmt.Sprintf("=== ACONTO ELECTRICITY BILL ESTIMATE FOR %s ===", selectedPeriod.Label))
+	case billing.PeriodHybrid:
+		utils.PrintSuccess(fmt.Sprintf("=== HYBRID ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
+	}
 	fmt.Println()
 
 	// Consumption summary
@@ -259,7 +349,17 @@ func main() {
 	utils.PrintInfo(fmt.Sprintf("Period: %s to %s",
 		selectedPeriod.Start.In(copenhagen).Format("2006-01-02"),
 		selectedPeriod.End.AddDate(0, 0, -1).In(copenhagen).Format("2006-01-02")))
-	utils.PrintInfo(fmt.Sprintf("Total consumption: %.2f kWh", totalConsumption))
+
+	switch periodType {
+	case billing.PeriodHistorical:
+		utils.PrintInfo(fmt.Sprintf("Total consumption: %.2f kWh (actual)", totalConsumption))
+	case billing.PeriodAconto:
+		utils.PrintInfo(fmt.Sprintf("Total consumption: %.2f kWh (estimated)", totalConsumption))
+		utils.PrintInfo(fmt.Sprintf("Based on estimated annual volume: %d kWh", gridOperator.EstimatedAnnualVolume))
+	case billing.PeriodHybrid:
+		utils.PrintInfo(fmt.Sprintf("Total consumption: %.2f kWh (actual + estimated)", totalConsumption))
+		utils.PrintInfo(fmt.Sprintf("Based on estimated annual volume: %d kWh", gridOperator.EstimatedAnnualVolume))
+	}
 	fmt.Println()
 
 	// Usage-based charges
@@ -281,20 +381,6 @@ func main() {
 	fmt.Println()
 
 	// Total bill
-	utils.PrintSuccess(fmt.Sprintf("TOTAL ELECTRICITY BILL: %.2f DKK", totalBill))
-	utils.PrintInfo(fmt.Sprintf("Average cost per kWh: %.3f DKK", totalBill/totalConsumption))
-
-	// Calculate VAT (25% in Denmark)
-	const VAT_RATE = 0.25
-	totalVAT := totalBill * VAT_RATE
-	totalBillWithVAT := totalBill + totalVAT
-
-	// Display results
-	utils.ClearConsole()
-	utils.PrintSuccess(fmt.Sprintf("=== COMPLETE ELECTRICITY BILL FOR %s ===", selectedPeriod.Label))
-	fmt.Println()
-
-	// Total bill
 	utils.PrintInfo("BILL SUMMARY:")
 	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "Subtotal (excluding VAT)", totalBill))
 	utils.PrintInfo(fmt.Sprintf("%-30s: %8.2f DKK", "VAT (25%)", totalVAT))
@@ -302,4 +388,13 @@ func main() {
 	fmt.Println()
 
 	utils.PrintInfo(fmt.Sprintf("Average cost per kWh (incl. VAT): %.3f DKK", totalBillWithVAT/totalConsumption))
+
+	// Add appropriate disclaimers
+	if periodType == billing.PeriodAconto || periodType == billing.PeriodHybrid {
+		fmt.Println()
+		utils.PrintWarning("ESTIMATION DISCLAIMER:")
+		utils.PrintWarning("This includes estimates based on industry-standard monthly/quarterly division.")
+		utils.PrintWarning("Actual consumption patterns and spot prices may vary significantly.")
+		utils.PrintWarning("Use this estimate for budgeting purposes only.")
+	}
 }
